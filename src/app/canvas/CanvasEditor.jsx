@@ -29,30 +29,20 @@ export default function CanvasEditor() {
   const [dialogName, setDialogName] = useState("");
   const [dialogError, setDialogError] = useState("");
 
+  // this fucntion to change the color automatically when not in edit mode
+  useEffect(() => {
+    if (!editMode && canvasEditor) {
+      startAutoColorCycle("taqa_water");
+    } else if (editMode) {
+      stopAutoColorCycle("taqa_water");
+    }
+  }, [editMode, canvasEditor]);
+
   useEffect(() => setIsClient(true), []);
 
   const saveCanvasToStorage = (canvas = canvasEditor) => {
     if (!canvas) return;
     try {
-      try {
-        const assignName = (obj, name) => {
-          try {
-            if (!obj) return;
-            obj.svgName = name;
-            if (obj.getObjects && typeof obj.getObjects === "function") {
-              obj.getObjects().forEach((child) => assignName(child, name));
-            }
-          } catch (e) {}
-        };
-        canvas.getObjects().forEach((obj) => {
-          try {
-            if (obj && obj.svgName) {
-              assignName(obj, obj.svgName);
-            }
-          } catch (e) {}
-        });
-      } catch (e) {}
-
       const json = JSON.stringify(canvas.toJSON(["svgName"]));
       localStorage.setItem(CANVAS, json);
     } catch (err) {
@@ -355,7 +345,6 @@ export default function CanvasEditor() {
     } catch (err) {
       console.warn("confirmPending: error checking existing names", err);
     }
-    // name is unique — proceed
     setDialogError("");
     processPendingSvg(trimmed);
   };
@@ -395,7 +384,8 @@ export default function CanvasEditor() {
   };
 
   const autoColorRefs = useRef({});
-  const AUTO_COLORS = ["#007BFF", "#28A745", "#FFC107", "#DC3545", "#6f42c1"];
+  // Only red, green, yellow
+  const AUTO_COLORS = ["#DC3545", "#28A745", "#FFC107"];
 
   const applyColorToSvgName = (svgName, color) => {
     if (!canvasEditor || !svgName) return;
@@ -443,7 +433,7 @@ export default function CanvasEditor() {
       } catch (e) {
         console.warn("auto color tick failed", e);
       }
-    }, 1000);
+    }, 3000);
   };
 
   const stopAutoColorCycle = (svgName) => {
@@ -465,13 +455,11 @@ export default function CanvasEditor() {
     autoColorRefs.current = {};
   };
 
-  // Stop cycles when entering edit mode or on unmount
   useEffect(() => {
     if (editMode) stopAllAutoColorCycles();
     return () => {};
   }, [editMode]);
 
-  // Expose simple window helpers for manual control (optional)
   useEffect(() => {
     if (typeof window !== "undefined") {
       window.startSvgAutoColor = startAutoColorCycle;
@@ -552,7 +540,6 @@ export default function CanvasEditor() {
   useEffect(() => {
     if (!canvasEditor) return;
     try {
-      // Toggle canvas selection and object interactivity based on editMode
       canvasEditor.selection = !!editMode;
       canvasEditor.forEachObject((obj) => {
         try {
@@ -906,7 +893,7 @@ export default function CanvasEditor() {
         <div className="p-6 border-b border-border">
           <h3 className="text-sm font-semibold text-foreground mb-4">Upload</h3>
           <label
-            className={`w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md cursor-pointer block ${
+            className={`w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md cursor-pointer  ${
               !editMode
                 ? "opacity-50 cursor-not-allowed"
                 : "hover:bg-primary/90"
