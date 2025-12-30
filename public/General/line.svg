@@ -1,0 +1,19 @@
+<svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 72" width="100" height="72">
+	<title>noun-wavy-line-2603494</title>
+	<defs>
+		<image  width="80" height="10" id="img1" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFAAAAAKAQMAAAAZykt/AAAAAXNSR0IB2cksfwAAAAZQTFRF////AAAAVcLTfgAAAAJ0Uk5T/wDltzBKAAAAeUlEQVR4nAFuAJH/AQf4/wP+AIH/gOEBA/z9BP8AAT/AwQGBfvEQf30EH+ACAfAP8QxDvUPQ8BAB+IdiHSHZhwh3IQH8Q4Q8EOEPxDlDAf4haHiIWh7iF4cB/wEP8MFD/PEQ/wH/gZ/g4Sf4+Qn+Af/Bf8DxH/D9B/yaWzSVMWW+6gAAAABJRU5ErkJggg=="/>
+	</defs>
+	<style>
+		tspan { white-space:pre } 
+		.t0 { font-size: 5px;fill: #000000;font-family: "' Helvetica  Neue'" } 
+	</style>
+	<use  href="#img1" x="10" y="32"/>
+	<text id="Created by Made by Made" style="transform: matrix(1,0,0,1,0,102)" >
+		<tspan x="0" y="0" class="t0">Created by Made by Made
+</tspan>
+	</text>
+	<text id="from the Noun Project" style="transform: matrix(1,0,0,1,0,107)" >
+		<tspan x="0" y="0" class="t0">from the Noun Project
+</tspan>
+	</text>
+</svg>
