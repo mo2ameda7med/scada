@@ -1,12 +1,58 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
-import UploadNameDialog from "./UploadNameDialog";
 
 const CANVAS = "Canvas_SVG_List";
 const CANVAS_EDIT_MODE = "Canvas_Edit_Mode";
 
 const DEFAULT_SVG_COLOR = "#007BFF";
+
+const svgList = {
+  Blowers: [
+    "FiberglassFan.svg",
+    "PressureBlower.svg",
+    "RadialFumeExhauster.svg",
+    "RegenerativeBlower.svg",
+  ],
+  "Flow Meters": [
+    "MagneticFlowMeter.svg",
+    "MagneticFlowMeter1.svg",
+    "MassFlowMeter.svg",
+    "TurbineMeter.svg",
+    "TurbineMeter1.svg",
+    "UltrasonicFlowTransducer.svg",
+    "UltrasonicFlowTransducer1.svg",
+    "VenturiFlowMeter.svg",
+  ],
+  General: [
+    "line.svg",
+    "oval.svg",
+    "progress-v.svg",
+    "up-straight-arrow.svg",
+    "SignalLampOff.svg",
+    "valve.svg",
+  ],
+  Pipes: ["pipe1.svg", "pipe3.svg", "pipe4.svg"],
+  Pumps: ["Pump.svg"],
+  Tanks: ["Reactor.svg", "Tank.svg", "WaterTank1.svg"],
+  Vehicles: [
+    "18-WheelerTruck.svg",
+    "AirplaneRight.svg",
+    "AirplaneUp.svg",
+    "Bicycle.svg",
+    "Bulldozer.svg",
+    "Car.svg",
+    "ForkLift.svg",
+    "ForkLift1.svg",
+    "Helicopter.svg",
+    "Loader.svg",
+    "RailroadBoxCar.svg",
+    "RailroadContainerCar.svg",
+    "RailroadTankerCar.svg",
+    "Ship.svg",
+    "Simple-18-WheelerTruck.svg",
+  ],
+};
 
 export default function CanvasEditor() {
   const canvasRef = useRef(null);
@@ -29,12 +75,14 @@ export default function CanvasEditor() {
   const [dialogName, setDialogName] = useState("");
   const [dialogError, setDialogError] = useState("");
 
-  // this fucntion to change the color automatically when not in edit mode
+  const [selectedCategory, setSelectedCategory] = useState("");
+
+  // && this fucntion to change the color automatically when not in edit mode
   useEffect(() => {
     if (!editMode && canvasEditor) {
-      startAutoColorCycle("taqa_water");
+      startAutoColorCycle("MagneticFlowMeter");
     } else if (editMode) {
-      stopAutoColorCycle("taqa_water");
+      stopAutoColorCycle("MagneticFlowMeter");
     }
   }, [editMode, canvasEditor]);
 
@@ -83,8 +131,8 @@ export default function CanvasEditor() {
         const el = canvasRef.current;
         if (!el) return;
         const parent = el.parentElement || document.body;
-        const width = Math.max(1100, parent.clientWidth || 1100);
-        const height = Math.max(1100, parent.clientHeight || 1100);
+        const width = Math.max(1200, parent.clientWidth || 1200);
+        const height = Math.max(1200, parent.clientHeight || 1200);
         canvas.setWidth(width);
         canvas.setHeight(height);
         canvas.renderAll();
@@ -211,14 +259,13 @@ export default function CanvasEditor() {
     const svgString = pendingSvgText;
     if (!svgString || !canvasEditor) return;
 
-    // Remove BOM if present
     const svgStringTrimmed = svgString.replace(/^\uFEFF/, "");
 
     fabric
       .loadSVGFromString(svgStringTrimmed)
       .then((svgData) => {
         const canvas = canvasEditor;
-        const filteredObjects = svgData.objects; // Remove filter(Boolean) to include all objects
+        const filteredObjects = svgData.objects;
 
         if (filteredObjects.length === 0) {
           console.warn("No objects in SVG");
@@ -273,11 +320,11 @@ export default function CanvasEditor() {
           });
 
           if (group instanceof fabric.Group) {
-            group.getObjects().forEach((path) => {
-              if (path && path.type !== "text") {
-                path.set("fill", DEFAULT_SVG_COLOR);
-              }
-            });
+            // group.getObjects().forEach((path) => {
+            //   if (path && path.type !== "text") {
+            //     path.set("fill", DEFAULT_SVG_COLOR);
+            //   }
+            // });
             if (typeof group.addWithUpdate === "function") {
               group.addWithUpdate(label);
             } else if (Array.isArray(group.getObjects && group.getObjects())) {
@@ -349,12 +396,23 @@ export default function CanvasEditor() {
     processPendingSvg(trimmed);
   };
 
+  const COLOR_PALETTE = [
+    { name: "Blue", value: "#007BFF" },
+    { name: "Green", value: "#28A745" },
+    { name: "Yellow", value: "#FFC107" },
+    { name: "Red", value: "#DC3545" },
+    { name: "Orange", value: "#FD7E14" },
+    { name: "Purple", value: "#6F42C1" },
+    { name: "Black", value: "#222" },
+    { name: "Gray", value: "#6C757D" },
+    { name: "White", value: "#FFF", border: true },
+  ];
+
   const applyColor = (color) => {
     if (!editMode) return;
     const canvas = canvasEditor;
     if (!canvas) return;
-    const fillColor =
-      color === "blue" ? "#007BFF" : color === "green" ? "#28A745" : "#FFC107";
+    const fillColor = color;
     const targets = selectedObjects.length > 0 ? selectedObjects : [];
     const applyToObject = (obj) => {
       try {
@@ -707,6 +765,24 @@ export default function CanvasEditor() {
     </svg>
   );
 
+  const handleSvgSelect = async (category, svgFile) => {
+    if (!editMode || !canvasEditor) return;
+    try {
+      const res = await fetch(
+        `/${encodeURIComponent(category)}/${encodeURIComponent(svgFile)}`
+      );
+      if (!res.ok) throw new Error("Failed to fetch SVG");
+      const svgString = await res.text();
+      setPendingSvgText(svgString);
+      setPendingFileName(svgFile);
+      setDialogName(svgFile.replace(/\.svg$/i, ""));
+      setDialogError("");
+      setShowNameDialog(true);
+    } catch (err) {
+      alert("Error loading SVG: " + err.message);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Left Sidebar Panel */}
@@ -889,71 +965,142 @@ export default function CanvasEditor() {
           </div>
         </div>
 
-        {/* Upload Section */}
+        {/* SVG Library Section */}
         <div className="p-6 border-b border-border">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Upload</h3>
-          <label
-            className={`w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md cursor-pointer  ${
-              !editMode
-                ? "opacity-50 cursor-not-allowed"
-                : "hover:bg-primary/90"
-            }`}
-          >
-            <UploadIcon />
-            <span>Upload SVG</span>
-            <input
-              type="file"
-              accept=".svg"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              className="hidden"
-              disabled={!editMode}
-            />
-          </label>
+          <h3 className="text-sm font-semibold text-foreground mb-4">
+            SVG Library
+          </h3>
+          <div className="space-y-2">
+            {Object.entries(svgList).map(([category, svgs]) => (
+              <div key={category} className="mb-2">
+                <button
+                  type="button"
+                  className="w-full flex justify-between items-center px-2 py-2 bg-secondary rounded hover:bg-secondary/80 text-left font-semibold text-sm"
+                  onClick={() =>
+                    setSelectedCategory(
+                      selectedCategory === category ? "" : category
+                    )
+                  }
+                  disabled={!editMode}
+                >
+                  <span>{category}</span>
+                  <span>{selectedCategory === category ? "▲" : "▼"}</span>
+                </button>
+                {selectedCategory === category && (
+                  <div className="pl-4 pt-2">
+                    {svgs.length ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {svgs.map((svg) => (
+                          <button
+                            key={svg}
+                            className="flex flex-col items-center border rounded p-2 bg-muted hover:bg-accent"
+                            style={{ minWidth: 0 }}
+                            disabled={!editMode}
+                            onClick={() => handleSvgSelect(category, svg)}
+                          >
+                            <img
+                              src={`/${encodeURIComponent(
+                                category
+                              )}/${encodeURIComponent(svg)}`}
+                              alt={svg}
+                              className="w-12 h-12 object-contain mb-1"
+                            />
+                            <span className="text-xs truncate w-full">
+                              {svg.replace(/\.svg$/i, "")}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        No SVGs found.
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Colors Section */}
-        <div className="p-6">
-          <h3 className="text-sm font-semibold text-foreground mb-4">Colors</h3>
-          <div className="grid grid-cols-3 gap-2">
-            {["blue", "green", "yellow"].map((color) => (
-              <button
-                key={color}
-                onClick={() => applyColor(color)}
-                disabled={!editMode}
-                className={`w-full aspect-square rounded-lg text-white text-xs font-medium capitalize transition-all duration-200 shadow-sm hover:shadow-md flex items-center justify-center ${
-                  !editMode
-                    ? "opacity-50 cursor-not-allowed"
-                    : "hover:scale-105"
-                } ${color === "blue" ? "bg-blue-500 hover:bg-blue-600" : ""} ${
-                  color === "green" ? "bg-green-500 hover:bg-green-600" : ""
-                } ${
-                  color === "yellow" ? "bg-yellow-500 hover:bg-yellow-600" : ""
-                }`}
-                title={`Apply ${color} color`}
-              >
-                {color.charAt(0).toUpperCase()}
-              </button>
-            ))}
+        {/* Quick Color Buttons */}
+        <div className="p-6 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground mb-4">
+            Quick Colors
+          </h3>
+          <div className="flex gap-2 justify-between">
+            <button
+              onClick={() => applyColor("#007BFF")}
+              disabled={!editMode}
+              className="w-8 h-8 rounded-full bg-blue-500 hover:bg-blue-600 border-2 border-blue-700 transition-all duration-200 shadow-sm flex items-center justify-center"
+              title="Apply Blue"
+            />
+            <button
+              onClick={() => applyColor("#28A745")}
+              disabled={!editMode}
+              className="w-8 h-8 rounded-full bg-green-500 hover:bg-green-600 border-2 border-green-700 transition-all duration-200 shadow-sm flex items-center justify-center"
+              title="Apply Green"
+            />
+            <button
+              onClick={() => applyColor("#FFC107")}
+              disabled={!editMode}
+              className="w-8 h-8 rounded-full bg-yellow-400 hover:bg-yellow-500 border-2 border-yellow-600 transition-all duration-200 shadow-sm flex items-center justify-center"
+              title="Apply Yellow"
+            />
+            <button
+              onClick={() => applyColor("#DC3545")}
+              disabled={!editMode}
+              className="w-8 h-8 rounded-full bg-red-500 hover:bg-red-600 border-2 border-red-700 transition-all duration-200 shadow-sm flex items-center justify-center"
+              title="Apply Red"
+            />
           </div>
         </div>
       </div>
 
       {/* Canvas Area */}
-      <div className="flex-1 p-6 flex flex-col">
-        <div className="flex-1 border border-border shadow-lg">
-          <canvas ref={canvasRef} className="w-full h-full" />
-        </div>
+      <div className="flex-1 relative">
+        <canvas ref={canvasRef} className="w-full h-full " />
       </div>
-      <UploadNameDialog
-        visible={showNameDialog}
-        pendingFileName={pendingFileName}
-        dialogName={dialogName}
-        setDialogName={setDialogName}
-        onConfirm={confirmPending}
-        onCancel={cancelPending}
-        error={dialogError}
-      />
+
+      {/* Name Dialog for SVG */}
+      {showNameDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-80">
+            <h2 className="text-lg font-semibold mb-2">Enter SVG Name</h2>
+            <input
+              className="w-full border rounded px-2 py-1 mb-2"
+              value={dialogName}
+              onChange={(e) => setDialogName(e.target.value)}
+              placeholder="Unique name"
+              autoFocus
+              disabled={!editMode}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmPending(dialogName);
+              }}
+            />
+            {dialogError && (
+              <div className="text-red-500 text-xs mb-2">{dialogError}</div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                className="px-3 py-1 rounded bg-gray-200 hover:bg-gray-300 text-sm"
+                onClick={cancelPending}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 text-sm"
+                onClick={() => confirmPending(dialogName)}
+                type="button"
+                disabled={!editMode}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" standalone="yes"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="http://www.w3.org/2000/svg" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://web.resource.org/cc/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" width="28" height="200">
+<path style="fill:#7f594d; stroke:none;" d="M0 0L0 200L1 200L1 59L1 19L0 0z"/>
+<path style="fill:#511d09; stroke:none;" d="M1 0L1 200L2 200L2 59L2 19L1 0z"/>
+<path style="fill:#995d37; stroke:none;" d="M2 0L2 200L5 200L5 0L2 0z"/>
+<path style="fill:#c99157; stroke:none;" d="M5 0L5 200L7 200L7 0L5 0z"/>
+<path style="fill:#d9b175; stroke:none;" d="M7 0L7 200L10 200L10 0L7 0z"/>
+<path style="fill:#e5cb9d; stroke:none;" d="M10 0L10 200L11 200L11 59L11 19L10 0z"/>
+<path style="fill:#efd9b1; stroke:none;" d="M11 0L11 200L12 200L12 59L12 19L11 0z"/>
+<path style="fill:#fff5d5; stroke:none;" d="M12 0L12 200L15 200L15 0L12 0z"/>
+<path style="fill:#f3dbb9; stroke:none;" d="M15 0L15 200L16 200L16 59L16 19L15 0z"/>
+<path style="fill:#edcb9f; stroke:none;" d="M16 0L16 200L17 200L17 59L17 19L16 0z"/>
+<path style="fill:#d7af77; stroke:none;" d="M17 0L17 200L20 200L20 0L17 0z"/>
+<path style="fill:#c19557; stroke:none;" d="M20 0L20 200L21 200L21 59L21 19L20 0z"/>
+<path style="fill:#a56d3b; stroke:none;" d="M21 0L21 200L24 200L24 0L21 0z"/>
+<path style="fill:#753b2b; stroke:none;" d="M24 0L24 200L26 200L26 0L24 0z"/>
+<path style="fill:#3f0d07; stroke:none;" d="M26 0L26 200L27 200L27 59L27 19L26 0z"/>
+<path style="fill:#552d2d; stroke:none;" d="M27 0L27 200L28 200L28 59L28 19L27 0z"/>
+</svg>
