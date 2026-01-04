@@ -5,8 +5,6 @@ import * as fabric from "fabric";
 const CANVAS = "Canvas_SVG_List";
 const CANVAS_EDIT_MODE = "Canvas_Edit_Mode";
 
-const DEFAULT_SVG_COLOR = "#007BFF";
-
 const svgList = {
   Blowers: [
     "FiberglassFan.svg",
@@ -32,7 +30,37 @@ const svgList = {
     "SignalLampOff.svg",
     "valve.svg",
   ],
-  Pipes: ["pipe1.svg", "pipe3.svg", "pipe4.svg"],
+  Pipes: [
+    "Pipe4.svg",
+    "Pipe3.svg",
+    "pipe1.svg",
+    "Pipe_vertical_grey.svg",
+    "Pipe_tee_up_grey.svg",
+    "Pipe_tee_right_grey.svg",
+    "Pipe_tee_left_grey.svg",
+    "Pipe_tee_down_grey.svg",
+    "Pipe_horizontal_grey.svg",
+    "Intersection_grey.svg",
+    "Flange_without_bolts_vertical_grey.svg",
+    "Flange_without_bolts_horizontal_grey.svg",
+
+    "Flange_on_top_grey.svg",
+    "Flange_on_right_grey.svg",
+    "Flange_on_left_grey.svg",
+    "Flange_on_bottom_grey.svg",
+    "EmptyWireSpool.svg",
+    "Double_flange_vertical_grey.svg",
+    "Double_flange_horizontal_grey.svg",
+
+    "90_degree_bend_4_grey.svg",
+    "90_degree_bend_4_grey (1).svg",
+    "90_degree_bend_3_grey.svg",
+    "90_degree_bend_2_grey.svg",
+    "90_degree_bend_2_grey (1).svg",
+
+    "90_degree_bend_1_middledark.svg",
+    "90_degree_bend_1_grey.svg",
+  ],
   Pumps: ["Pump.svg"],
   Tanks: ["Reactor.svg", "Tank.svg", "WaterTank1.svg"],
   Vehicles: [
@@ -58,6 +86,7 @@ export default function CanvasEditor() {
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
   const loadInputRef = useRef(null);
+  const clipboard = useRef(null); // Ref to store copied object
   const [canvasEditor, setCanvasEditor] = useState(null);
   const [selectedObject, setSelectedObject] = useState(null);
   const [selectedObjects, setSelectedObjects] = useState([]);
@@ -237,6 +266,80 @@ export default function CanvasEditor() {
     canvas.requestRenderAll();
   };
 
+  // --- COPY AND PASTE LOGIC START ---
+
+  const handleCopy = async () => {
+    if (!editMode || !canvasEditor) return;
+    const activeObject = canvasEditor.getActiveObject();
+    if (!activeObject) return;
+
+    // Clone the object. We must include custom properties like 'svgName'
+    try {
+      const cloned = await activeObject.clone([
+        "svgName",
+        "svgString",
+        "svgUpdated",
+      ]);
+      clipboard.current = cloned;
+    } catch (err) {
+      console.warn("Error copying object:", err);
+    }
+  };
+
+  const handlePaste = async () => {
+    if (!editMode || !canvasEditor || !clipboard.current) return;
+
+    try {
+      // Clone again from clipboard (so we can paste multiple times)
+      const clonedObj = await clipboard.current.clone([
+        "svgName",
+        "svgString",
+        "svgUpdated",
+      ]);
+
+      canvasEditor.discardActiveObject();
+
+      clonedObj.set({
+        left: (clonedObj.left || 0) + 20,
+        top: (clonedObj.top || 0) + 20,
+        evented: true,
+      });
+
+      // Generate unique names for the pasted objects to avoid conflicts
+      if (
+        clonedObj.type === "activeSelection" ||
+        clonedObj.type === "activeselection"
+      ) {
+        clonedObj.canvas = canvasEditor;
+        clonedObj.forEachObject((obj) => {
+          if (obj.svgName) {
+            obj.set(
+              "svgName",
+              `${obj.svgName}_copy_${Date.now()}_${Math.random()
+                .toString(36)
+                .substr(2, 5)}`
+            );
+          }
+          canvasEditor.add(obj);
+        });
+        clonedObj.setCoords();
+      } else {
+        if (clonedObj.svgName) {
+          clonedObj.set("svgName", `${clonedObj.svgName}_copy_${Date.now()}`);
+        }
+        canvasEditor.add(clonedObj);
+      }
+
+      canvasEditor.setActiveObject(clonedObj);
+      canvasEditor.requestRenderAll();
+      saveCanvasToStorage();
+    } catch (err) {
+      console.warn("Error pasting object:", err);
+    }
+  };
+
+  // --- COPY AND PASTE LOGIC END ---
+
   const handleFileUpload = (e) => {
     if (!editMode) return;
     const file = e.target.files?.[0];
@@ -320,11 +423,6 @@ export default function CanvasEditor() {
           });
 
           if (group instanceof fabric.Group) {
-            // group.getObjects().forEach((path) => {
-            //   if (path && path.type !== "text") {
-            //     path.set("fill", DEFAULT_SVG_COLOR);
-            //   }
-            // });
             if (typeof group.addWithUpdate === "function") {
               group.addWithUpdate(label);
             } else if (Array.isArray(group.getObjects && group.getObjects())) {
@@ -340,7 +438,7 @@ export default function CanvasEditor() {
         }
 
         canvas.add(group);
-        canvas.renderAll(); // Change to renderAll for immediate rendering
+        canvas.renderAll();
         saveCanvasToStorage();
 
         if (fileInputRef.current) fileInputRef.current.value = "";
@@ -576,21 +674,65 @@ export default function CanvasEditor() {
     saveCanvasToStorage(canvas);
   };
 
+  // UPDATED DELETE / BACKSPACE HANDLER
   useEffect(() => {
     if (!canvasEditor) return;
+
     const handleKeyDown = (event) => {
+      // Only allow shortcuts in Edit Mode
       if (!editMode) return;
+
+      // DELETE / BACKSPACE
       if (event.key === "Delete" || event.key === "Backspace") {
-        const activeObject = canvasEditor.getActiveObject();
-        if (activeObject) {
-          canvasEditor.remove(activeObject);
-          canvasEditor.discardActiveObject();
-          canvasEditor.requestRenderAll();
-          setSelectedObject(null);
-          setSelectedObjects([]);
+        const canvas = canvasEditor;
+        if (!canvas) return;
+
+        const activeObjects = canvas.getActiveObjects();
+        if (!activeObjects || activeObjects.length === 0) return;
+
+        // If the only active object is text being edited, do nothing
+        if (activeObjects.length === 1 && activeObjects[0].isEditing) {
+          return;
         }
+
+        activeObjects.forEach((obj) => {
+          if (obj.type === "group") {
+            // Remove the group itself
+            canvas.remove(obj);
+          } else if (
+            obj.type === "activeSelection" ||
+            obj.type === "activeselection"
+          ) {
+            // Remove all children of an ActiveSelection
+            obj.getObjects().forEach((child) => {
+              canvas.remove(child);
+            });
+          } else {
+            // Single fabric object
+            canvas.remove(obj);
+          }
+        });
+
+        canvas.discardActiveObject();
+        canvas.requestRenderAll();
+        setSelectedObject(null);
+        setSelectedObjects([]);
+        saveCanvasToStorage(canvas);
+      }
+
+      // COPY (Ctrl+C or Cmd+C)
+      if ((event.ctrlKey || event.metaKey) && event.key === "c") {
+        event.preventDefault(); // Prevent browser copy
+        handleCopy();
+      }
+
+      // PASTE (Ctrl+V or Cmd+V)
+      if ((event.ctrlKey || event.metaKey) && event.key === "v") {
+        event.preventDefault(); // Prevent browser paste
+        handlePaste();
       }
     };
+
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [canvasEditor, editMode]);
@@ -627,7 +769,11 @@ export default function CanvasEditor() {
   if (!isClient)
     return (
       <div className="w-screen h-screen flex items-center justify-center">
-        <p className="text-gray-500 animate-spin ">Loading...</p>
+        <div
+          className="h-10 w-10 rounded-full border-4 border-gray-200 border-t-blue-500 animate-spin"
+          aria-label="Loading"
+          role="status"
+        />
       </div>
     );
 
@@ -761,6 +907,38 @@ export default function CanvasEditor() {
         strokeLinejoin="round"
         strokeWidth={2}
         d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+      />
+    </svg>
+  );
+
+  const CopyIcon = () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+      />
+    </svg>
+  );
+
+  const PasteIcon = () => (
+    <svg
+      className="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
       />
     </svg>
   );
@@ -915,6 +1093,34 @@ export default function CanvasEditor() {
                 />
               </svg>
               <span>Discard</span>
+            </button>
+
+            {/* COPY BUTTON */}
+            <button
+              onClick={handleCopy}
+              className={`w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md ${
+                !editMode
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:bg-secondary/80"
+              }`}
+              disabled={!editMode}
+            >
+              <CopyIcon />
+              <span>Copy</span>
+            </button>
+
+            {/* PASTE BUTTON */}
+            <button
+              onClick={handlePaste}
+              className={`w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md ${
+                !editMode
+                  ? "opacity-50 cursor-not-allowed"
+                  : "hover:bg-secondary/80"
+              }`}
+              disabled={!editMode}
+            >
+              <PasteIcon />
+              <span>Paste</span>
             </button>
 
             <button
