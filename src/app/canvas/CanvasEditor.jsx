@@ -32,8 +32,12 @@ const svgList = {
   ],
   Pipes: [
     "Pipe4.svg",
+    "verticalPipeline.svg",
+    "horezintalPipeLine.svg",
     "Pipe3.svg",
+    "Pipe30.svg",
     "pipe1.svg",
+    "22.svg",
     "Pipe_vertical_grey.svg",
     "Pipe_tee_up_grey.svg",
     "Pipe_tee_right_grey.svg",
@@ -62,7 +66,7 @@ const svgList = {
     "90_degree_bend_1_grey.svg",
   ],
   Pumps: ["Pump.svg"],
-  Tanks: ["Reactor.svg", "Tank.svg", "WaterTank1.svg"],
+  Tanks: ["Reactor.svg", "Tank.svg", "tank1.svg", "WaterTank1.svg"],
   Vehicles: [
     "18-WheelerTruck.svg",
     "AirplaneRight.svg",
@@ -80,6 +84,7 @@ const svgList = {
     "Ship.svg",
     "Simple-18-WheelerTruck.svg",
   ],
+  Sensors: ["sensor.svg"],
 };
 
 export default function CanvasEditor() {
@@ -109,9 +114,9 @@ export default function CanvasEditor() {
   // && this fucntion to change the color automatically when not in edit mode
   useEffect(() => {
     if (!editMode && canvasEditor) {
-      startAutoColorCycle("MagneticFlowMeter");
+      startAutoColorCycle("MagneticFlowMeter1");
     } else if (editMode) {
-      stopAutoColorCycle("MagneticFlowMeter");
+      stopAutoColorCycle("MagneticFlowMeter1");
     }
   }, [editMode, canvasEditor]);
 
