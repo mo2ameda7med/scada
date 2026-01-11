@@ -10,7 +10,7 @@
    data-name="Flat Color"
    class="icon flat-color"
    version="1.1"
-   sodipodi:docname="Pipe4.svg"
+   sodipodi:docname="horezintalPipeLine.svg"
    inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -62,7 +62,7 @@
      inkscape:current-layer="pipe" />
   <g
      id="g8"
-     transform="translate(1.3040103,0.12419146)">
+     transform="rotate(-90,11.752664,11.335653)">
     <rect
        style="fill:#000000;stroke-width:0.03"
        id="rect2-8-5"
