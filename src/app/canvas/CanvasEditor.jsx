@@ -2,6 +2,41 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
 
+const CUSTOM_PROPS = ["svgName", "svgString", "svgUpdated"];
+
+if (!fabric.Object.prototype._svgCustomPropsPatched) {
+  const baseToObject = fabric.Object.prototype.toObject;
+  fabric.Object.prototype.toObject = function (propertiesToInclude) {
+    const props = Array.isArray(propertiesToInclude)
+      ? propertiesToInclude.slice()
+      : propertiesToInclude
+      ? [propertiesToInclude]
+      : [];
+
+    CUSTOM_PROPS.forEach((prop) => {
+      if (this[prop] !== undefined && !props.includes(prop)) {
+        props.push(prop);
+      }
+    });
+
+    return baseToObject.call(this, props);
+  };
+
+  const baseInitialize = fabric.Object.prototype.initialize;
+  fabric.Object.prototype.initialize = function (...args) {
+    const res = baseInitialize.apply(this, args);
+    if (!this.stateProperties) this.stateProperties = [];
+    CUSTOM_PROPS.forEach((prop) => {
+      if (!this.stateProperties.includes(prop)) {
+        this.stateProperties.push(prop);
+      }
+    });
+    return res;
+  };
+
+  fabric.Object.prototype._svgCustomPropsPatched = true;
+}
+
 const CANVAS = "Canvas_SVG_List";
 const CANVAS_EDIT_MODE = "Canvas_Edit_Mode";
 
@@ -108,15 +143,13 @@ export default function CanvasEditor() {
   const [pendingFileName, setPendingFileName] = useState(null);
   const [dialogName, setDialogName] = useState("");
   const [dialogError, setDialogError] = useState("");
-
   const [selectedCategory, setSelectedCategory] = useState("");
-
-  // && this fucntion to change the color automatically when not in edit mode
+  // && this function used to take the name and change color of svg while mode is view
   useEffect(() => {
     if (!editMode && canvasEditor) {
-      startAutoColorCycle("MagneticFlowMeter1");
+      startAutoColorCycle("tank1");
     } else if (editMode) {
-      stopAutoColorCycle("MagneticFlowMeter1");
+      stopAutoColorCycle("tank1");
     }
   }, [editMode, canvasEditor]);
 
@@ -125,7 +158,8 @@ export default function CanvasEditor() {
   const saveCanvasToStorage = (canvas = canvasEditor) => {
     if (!canvas) return;
     try {
-      const json = JSON.stringify(canvas.toJSON(["svgName"]));
+      const jsonData = canvas.toJSON(CUSTOM_PROPS);
+      const json = JSON.stringify(jsonData);
       localStorage.setItem(CANVAS, json);
     } catch (err) {
       console.error("saveCanvasToStorage: failed to serialize canvas", err);
@@ -137,10 +171,42 @@ export default function CanvasEditor() {
     if (!storedState || !canvas) return false;
 
     try {
-      canvas.loadFromJSON(JSON.parse(storedState), () => {
-        canvas.requestRenderAll();
-        setSelectedObjects([]);
-      });
+      const parsedData = JSON.parse(storedState);
+
+      canvas.loadFromJSON(
+        parsedData,
+        () => {
+          canvas.getObjects().forEach((obj) => {
+            if (obj.svgName !== undefined) {
+              if (!obj.stateProperties) obj.stateProperties = [];
+              CUSTOM_PROPS.forEach((prop) => {
+                if (!obj.stateProperties.includes(prop)) {
+                  obj.stateProperties.push(prop);
+                }
+              });
+              const originalToObject = obj.toObject.bind(obj);
+              obj.toObject = function (propertiesToInclude) {
+                const props = Array.isArray(propertiesToInclude)
+                  ? propertiesToInclude.slice()
+                  : propertiesToInclude
+                  ? [propertiesToInclude]
+                  : [];
+                CUSTOM_PROPS.forEach((p) => {
+                  if (!props.includes(p)) props.push(p);
+                });
+                return originalToObject(props);
+              };
+            }
+          });
+          canvas.requestRenderAll();
+          setSelectedObjects([]);
+        },
+        (o, object) => {
+          if (o.svgName !== undefined) object.svgName = o.svgName;
+          if (o.svgString !== undefined) object.svgString = o.svgString;
+          if (o.svgUpdated !== undefined) object.svgUpdated = o.svgUpdated;
+        }
+      );
       return true;
     } catch (error) {
       console.error("Error loading canvas from storage:", error);
@@ -298,11 +364,7 @@ export default function CanvasEditor() {
     if (!activeObject) return;
 
     try {
-      const cloned = await activeObject.clone([
-        "svgName",
-        "svgString",
-        "svgUpdated",
-      ]);
+      const cloned = await activeObject.clone(CUSTOM_PROPS);
       clipboard.current = cloned;
     } catch (err) {
       console.warn("Error copying object:", err);
@@ -313,11 +375,7 @@ export default function CanvasEditor() {
     if (!editMode || !canvasEditor || !clipboard.current) return;
 
     try {
-      const clonedObj = await clipboard.current.clone([
-        "svgName",
-        "svgString",
-        "svgUpdated",
-      ]);
+      const clonedObj = await clipboard.current.clone(CUSTOM_PROPS);
 
       canvasEditor.discardActiveObject();
 
@@ -391,6 +449,10 @@ export default function CanvasEditor() {
 
         const svgStringForStore = svgStringTrimmed;
 
+        group.svgName = svgName;
+        group.svgString = svgStringForStore;
+        group.svgUpdated = Date.now();
+
         group.set({
           left: canvas.width / 2,
           top: canvas.height / 2,
@@ -398,18 +460,20 @@ export default function CanvasEditor() {
           originY: "center",
           scaleX: 0.5,
           scaleY: 0.5,
-          svgName,
-          svgString: svgStringForStore,
-          svgUpdated: Date.now(),
         });
 
-        try {
-          const baseToObject = group.toObject;
-          group.toObject = function (props) {
-            const include = (props || []).concat(["svgName"]);
-            return baseToObject.call(this, include);
-          };
-        } catch (err) {}
+        const originalToObject = group.toObject.bind(group);
+        group.toObject = function (propertiesToInclude) {
+          const props = Array.isArray(propertiesToInclude)
+            ? propertiesToInclude.slice()
+            : propertiesToInclude
+            ? [propertiesToInclude]
+            : [];
+          CUSTOM_PROPS.forEach((p) => {
+            if (!props.includes(p)) props.push(p);
+          });
+          return originalToObject(props);
+        };
 
         try {
           const label = new fabric.Text(svgName, {
@@ -547,21 +611,28 @@ export default function CanvasEditor() {
   const applyColorToSvgName = (svgName, color) => {
     if (!canvasEditor || !svgName) return;
     try {
+      const applyToObject = (o) => {
+        try {
+          if (o instanceof fabric.Group && o.getObjects) {
+            o.getObjects().forEach(applyToObject);
+            o.dirty = true;
+          } else {
+            if (typeof o.set === "function" && o.type !== "text") {
+              o.set("fill", color);
+            }
+          }
+        } catch (e) {}
+      };
+
       canvasEditor.getObjects().forEach((obj) => {
-        if (obj && obj.svgName === svgName) {
-          const applyToObject = (o) => {
-            try {
-              if (o instanceof fabric.Group) {
-                o.getObjects().forEach(applyToObject);
-                o.dirty = true;
-              } else {
-                if (typeof o.set === "function" && o.type !== "text") {
-                  o.set("fill", color);
-                }
-              }
-            } catch (e) {}
-          };
+        if (obj.svgName === svgName) {
           applyToObject(obj);
+        } else if (obj instanceof fabric.Group && obj.getObjects) {
+          obj.getObjects().forEach((child) => {
+            if (child.svgName === svgName) {
+              applyToObject(child);
+            }
+          });
         }
       });
       canvasEditor.requestRenderAll();
@@ -637,7 +708,7 @@ export default function CanvasEditor() {
   const saveCanvasState = () => {
     const canvas = canvasEditor;
     if (!canvas) return;
-    const json = JSON.stringify(canvas.toJSON(["svgName"]), null, 2);
+    const json = JSON.stringify(canvas.toJSON(CUSTOM_PROPS), null, 2);
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -655,11 +726,44 @@ export default function CanvasEditor() {
     reader.onload = (event) => {
       const json = event.target?.result;
       if (!json) return;
-      canvasEditor.loadFromJSON(JSON.parse(json), () => {
-        canvasEditor.requestRenderAll();
-        setSelectedObjects([]);
-        saveCanvasToStorage();
-      });
+      canvasEditor.loadFromJSON(
+        JSON.parse(json),
+        () => {
+          canvasEditor.getObjects().forEach((obj) => {
+            if (obj.svgName !== undefined) {
+              if (!obj.stateProperties) {
+                obj.stateProperties = [];
+              }
+              CUSTOM_PROPS.forEach((prop) => {
+                if (!obj.stateProperties.includes(prop)) {
+                  obj.stateProperties.push(prop);
+                }
+              });
+
+              const baseToObject = obj.toObject.bind(obj);
+              obj.toObject = function (props) {
+                const list = Array.isArray(props)
+                  ? props.slice()
+                  : props
+                  ? [props]
+                  : [];
+                CUSTOM_PROPS.forEach((p) => {
+                  if (!list.includes(p)) list.push(p);
+                });
+                return baseToObject(list);
+              };
+            }
+          });
+          canvasEditor.requestRenderAll();
+          setSelectedObjects([]);
+          saveCanvasToStorage();
+        },
+        (o, object) => {
+          if (o.svgName !== undefined) object.svgName = o.svgName;
+          if (o.svgString !== undefined) object.svgString = o.svgString;
+          if (o.svgUpdated !== undefined) object.svgUpdated = o.svgUpdated;
+        }
+      );
     };
     reader.readAsText(file);
     if (loadInputRef.current) loadInputRef.current.value = "";
@@ -688,14 +792,12 @@ export default function CanvasEditor() {
         const activeObjects = canvas.getActiveObjects();
         if (!activeObjects || activeObjects.length === 0) return;
 
-        // If the only active object is text being edited, do nothing
         if (activeObjects.length === 1 && activeObjects[0].isEditing) {
           return;
         }
 
         activeObjects.forEach((obj) => {
           if (obj.type === "group") {
-            // Remove the group itself
             canvas.remove(obj);
           } else if (
             obj.type === "activeSelection" ||
@@ -1109,7 +1211,6 @@ export default function CanvasEditor() {
               <span>Discard</span>
             </button>
 
-            {/* COPY BUTTON */}
             <button
               onClick={handleCopy}
               className={`w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md ${
@@ -1123,7 +1224,6 @@ export default function CanvasEditor() {
               <span>Copy</span>
             </button>
 
-            {/* PASTE BUTTON */}
             <button
               onClick={handlePaste}
               className={`w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md ${
@@ -1137,7 +1237,6 @@ export default function CanvasEditor() {
               <span>Paste</span>
             </button>
 
-            {/* BRING UP BUTTON */}
             <button
               onClick={bringUp}
               className={`w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md ${
@@ -1163,7 +1262,6 @@ export default function CanvasEditor() {
               <span>Bring Up</span>
             </button>
 
-            {/* BRING DOWN BUTTON */}
             <button
               onClick={bringDown}
               className={`w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md ${
@@ -1189,7 +1287,6 @@ export default function CanvasEditor() {
               <span>Bring Down</span>
             </button>
 
-            {/* NEW: Add Text (draw.io-like) */}
             <button
               onClick={addTextBox}
               className={`w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md ${
@@ -1242,7 +1339,6 @@ export default function CanvasEditor() {
                 disabled={!editMode}
               />
             </label>
-
             <button
               onClick={saveCanvasState}
               className="w-full px-4 py-3 bg-primary text-primary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md hover:bg-primary/90"
