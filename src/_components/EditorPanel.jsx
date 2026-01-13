@@ -119,7 +119,6 @@ export default function EditorPanel({ selectedObject, canvas }) {
           "height",
         ];
 
-        // Only include properties that are explicitly set on the object (own properties)
         for (let key in selectedObject) {
           if (
             selectedObject.hasOwnProperty(key) &&
