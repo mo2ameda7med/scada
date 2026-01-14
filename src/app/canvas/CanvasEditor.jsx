@@ -1,6 +1,9 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import * as fabric from "fabric";
+import { io } from "socket.io-client";
+
+const socket = io("http://localhost:4005/");
 
 const CUSTOM_PROPS = ["svgName", "svgString", "svgUpdated"];
 
@@ -82,7 +85,6 @@ const svgList = {
     "Intersection_grey.svg",
     "Flange_without_bolts_vertical_grey.svg",
     "Flange_without_bolts_horizontal_grey.svg",
-
     "Flange_on_top_grey.svg",
     "Flange_on_right_grey.svg",
     "Flange_on_left_grey.svg",
@@ -90,13 +92,11 @@ const svgList = {
     "EmptyWireSpool.svg",
     "Double_flange_vertical_grey.svg",
     "Double_flange_horizontal_grey.svg",
-
     "90_degree_bend_4_grey.svg",
     "90_degree_bend_4_grey (1).svg",
     "90_degree_bend_3_grey.svg",
     "90_degree_bend_2_grey.svg",
     "90_degree_bend_2_grey (1).svg",
-
     "90_degree_bend_1_middledark.svg",
     "90_degree_bend_1_grey.svg",
   ],
@@ -144,16 +144,13 @@ export default function CanvasEditor() {
   const [dialogName, setDialogName] = useState("");
   const [dialogError, setDialogError] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
-  // && this function used to take the name and change color of svg while mode is view
-  useEffect(() => {
-    if (!editMode && canvasEditor) {
-      startAutoColorCycle("tank1");
-    } else if (editMode) {
-      stopAutoColorCycle("tank1");
-    }
-  }, [editMode, canvasEditor]);
 
-  useEffect(() => setIsClient(true), []);
+  // Socket state
+  const [socketColor, setSocketColor] = useState("");
+
+  // ====== AUTO COLOR + APPLY BY NAME ======
+  const autoColorRefs = useRef({});
+  const AUTO_COLORS = ["#DC3545", "#28A745", "#FFC107"];
 
   const saveCanvasToStorage = (canvas = canvasEditor) => {
     if (!canvas) return;
@@ -166,6 +163,137 @@ export default function CanvasEditor() {
     }
   };
 
+  const applyColorToSvgName = (svgName, color) => {
+    if (!canvasEditor || !svgName) return;
+    try {
+      const applyToObject = (o) => {
+        try {
+          if (o instanceof fabric.Group && o.getObjects) {
+            o.getObjects().forEach(applyToObject);
+            o.dirty = true;
+          } else {
+            if (typeof o.set === "function" && o.type !== "text") {
+              o.set("fill", color);
+            }
+          }
+        } catch (e) {}
+      };
+
+      canvasEditor.getObjects().forEach((obj) => {
+        if (obj.svgName === svgName) {
+          applyToObject(obj);
+        } else if (obj instanceof fabric.Group && obj.getObjects) {
+          obj.getObjects().forEach((child) => {
+            if (child.svgName === svgName) {
+              applyToObject(child);
+            }
+          });
+        }
+      });
+      canvasEditor.requestRenderAll();
+      saveCanvasToStorage();
+    } catch (err) {
+      console.warn("applyColorToSvgName failed", err);
+    }
+  };
+
+  const startAutoColorCycle = (svgName) => {
+    if (!svgName || !canvasEditor || editMode) return;
+    stopAutoColorCycle(svgName);
+    const entry = autoColorRefs.current[svgName] || {
+      index: 0,
+      intervalId: null,
+    };
+    autoColorRefs.current[svgName] = entry;
+
+    entry.index = (entry.index + 1) % AUTO_COLORS.length;
+    applyColorToSvgName(svgName, AUTO_COLORS[entry.index]);
+
+    entry.intervalId = window.setInterval(() => {
+      try {
+        entry.index = (entry.index + 1) % AUTO_COLORS.length;
+        applyColorToSvgName(svgName, AUTO_COLORS[entry.index]);
+      } catch (e) {
+        console.warn("auto color tick failed", e);
+      }
+    }, 3000);
+  };
+
+  const stopAutoColorCycle = (svgName) => {
+    const entry = autoColorRefs.current[svgName];
+    if (entry && entry.intervalId) {
+      clearInterval(entry.intervalId);
+      entry.intervalId = null;
+    }
+    delete autoColorRefs.current[svgName];
+  };
+
+  const stopAllAutoColorCycles = () => {
+    try {
+      Object.keys(autoColorRefs.current).forEach((name) => {
+        const e = autoColorRefs.current[name];
+        if (e && e.intervalId) clearInterval(e.intervalId);
+      });
+    } catch (e) {}
+    autoColorRefs.current = {};
+  };
+
+  // view-mode auto cycle
+  useEffect(() => {
+    if (!editMode && canvasEditor) {
+      startAutoColorCycle("tank1");
+    } else if (editMode) {
+      stopAutoColorCycle("tank1");
+    }
+  }, [editMode, canvasEditor]);
+
+  // expose helpers on window (debug)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.startSvgAutoColor = startAutoColorCycle;
+      window.stopSvgAutoColor = stopAutoColorCycle;
+      window.stopAllSvgAutoColor = stopAllAutoColorCycles;
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        try {
+          delete window.startSvgAutoColor;
+          delete window.stopSvgAutoColor;
+          delete window.stopAllSvgAutoColor;
+        } catch (e) {}
+      }
+    };
+  }, [canvasEditor, editMode]);
+
+  useEffect(() => setIsClient(true), []);
+
+  // ====== SOCKET EVENTS (color) ======
+  useEffect(() => {
+    if (!canvasEditor) return;
+
+    const handleConnect = () => {
+      console.log("Connected to server");
+      console.log("Socket ID:", socket.id);
+    };
+
+    const handleColor = (data) => {
+      console.log("color:", data);
+      setSocketColor(data.color);
+
+      const targetName = data.name || "tank1";
+      applyColorToSvgName(targetName, data.color);
+    };
+
+    socket.on("connect", handleConnect);
+    socket.on("color", handleColor);
+
+    return () => {
+      socket.off("connect", handleConnect);
+      socket.off("color", handleColor);
+    };
+  }, [canvasEditor]);
+
+  // ====== CANVAS INIT & LOAD ======
   const loadCanvasFromStorage = (canvas = canvasEditor) => {
     const storedState = localStorage.getItem(CANVAS);
     if (!storedState || !canvas) return false;
@@ -281,6 +409,7 @@ export default function CanvasEditor() {
     };
   }, [isClient]);
 
+  // ====== EDIT ACTIONS (select/group/keys/… إلخ) ======
   const selectAll = () => {
     if (!editMode) return;
     const canvas = canvasEditor;
@@ -417,368 +546,6 @@ export default function CanvasEditor() {
     }
   };
 
-  const processPendingSvg = (name) => {
-    if (!editMode) return;
-    const svgString = pendingSvgText;
-    if (!svgString || !canvasEditor) return;
-
-    const svgStringTrimmed = svgString.replace(/^\uFEFF/, "");
-
-    fabric
-      .loadSVGFromString(svgStringTrimmed)
-      .then((svgData) => {
-        const canvas = canvasEditor;
-        const filteredObjects = svgData.objects;
-
-        if (filteredObjects.length === 0) {
-          console.warn("No objects in SVG");
-          setPendingSvgText(null);
-          setPendingFileName(null);
-          setDialogName("");
-          setDialogError("");
-          setShowNameDialog(false);
-          if (fileInputRef.current) fileInputRef.current.value = "";
-          return;
-        }
-
-        const group = fabric.util.groupSVGElements(
-          filteredObjects,
-          svgData.options
-        );
-        const svgName = name || pendingFileName || `svg-${Date.now()}`;
-
-        const svgStringForStore = svgStringTrimmed;
-
-        group.svgName = svgName;
-        group.svgString = svgStringForStore;
-        group.svgUpdated = Date.now();
-
-        group.set({
-          left: canvas.width / 2,
-          top: canvas.height / 2,
-          originX: "center",
-          originY: "center",
-          scaleX: 0.5,
-          scaleY: 0.5,
-        });
-
-        const originalToObject = group.toObject.bind(group);
-        group.toObject = function (propertiesToInclude) {
-          const props = Array.isArray(propertiesToInclude)
-            ? propertiesToInclude.slice()
-            : propertiesToInclude
-            ? [propertiesToInclude]
-            : [];
-          CUSTOM_PROPS.forEach((p) => {
-            if (!props.includes(p)) props.push(p);
-          });
-          return originalToObject(props);
-        };
-
-        try {
-          const label = new fabric.Text(svgName, {
-            left: (group.width || 0) / 2 + 10,
-            top: 0,
-            originX: "left",
-            originY: "center",
-            fontSize: 14,
-            fill: "#333",
-            selectable: false,
-            evented: false,
-            name: `label-${Date.now()}`,
-          });
-
-          if (group instanceof fabric.Group) {
-            if (typeof group.addWithUpdate === "function") {
-              group.addWithUpdate(label);
-            } else if (Array.isArray(group.getObjects && group.getObjects())) {
-              group.getObjects().push(label);
-            }
-            group.dirty = true;
-          }
-        } catch (err) {
-          console.warn(
-            "processPendingSvg: failed to attach label into group",
-            err
-          );
-        }
-
-        canvas.add(group);
-        canvas.renderAll();
-        saveCanvasToStorage();
-
-        if (fileInputRef.current) fileInputRef.current.value = "";
-
-        setPendingSvgText(null);
-        setPendingFileName(null);
-        setDialogName("");
-        setDialogError("");
-        setShowNameDialog(false);
-      })
-      .catch((err) => {
-        console.error("Error loading SVG:", err);
-        setPendingSvgText(null);
-        setPendingFileName(null);
-        setDialogName("");
-        setDialogError("");
-        setShowNameDialog(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-      });
-  };
-
-  const cancelPending = () => {
-    setPendingSvgText(null);
-    setPendingFileName(null);
-    setDialogName("");
-    setDialogError("");
-    setShowNameDialog(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
-
-  const confirmPending = (name) => {
-    const canvas = canvasEditor;
-    const trimmed = (name || "").trim();
-    if (!trimmed) {
-      setDialogError("Name is required");
-      return;
-    }
-    try {
-      const exists = canvas
-        ? canvas.getObjects().some((obj) => {
-            const other = (obj && obj.svgName) || "";
-            return other.trim().toLowerCase() === trimmed.toLowerCase();
-          })
-        : false;
-      if (exists) {
-        setDialogError("This name is already used");
-        return;
-      }
-    } catch (err) {
-      console.warn("confirmPending: error checking existing names", err);
-    }
-    setDialogError("");
-    processPendingSvg(trimmed);
-  };
-
-  const COLOR_PALETTE = [
-    { name: "Blue", value: "#007BFF" },
-    { name: "Green", value: "#28A745" },
-    { name: "Yellow", value: "#FFC107" },
-    { name: "Red", value: "#DC3545" },
-    { name: "Orange", value: "#FD7E14" },
-    { name: "Purple", value: "#6F42C1" },
-    { name: "Black", value: "#222" },
-    { name: "Gray", value: "#6C757D" },
-    { name: "White", value: "#FFF", border: true },
-  ];
-
-  const applyColor = (color) => {
-    if (!editMode) return;
-    const canvas = canvasEditor;
-    if (!canvas) return;
-    const fillColor = color;
-    const targets = selectedObjects.length > 0 ? selectedObjects : [];
-    const applyToObject = (obj) => {
-      try {
-        if (obj instanceof fabric.Group) {
-          obj.getObjects().forEach((child) => applyToObject(child));
-          obj.dirty = true;
-        } else {
-          if (typeof obj.set === "function") {
-            const supportsFill =
-              "fill" in obj ||
-              obj.type === "path" ||
-              obj.type === "polygon" ||
-              obj.type === "polyline" ||
-              obj.type === "rect" ||
-              obj.type === "circle" ||
-              obj.type === "triangle";
-            if (supportsFill) obj.set("fill", fillColor);
-          }
-        }
-      } catch (err) {
-        console.warn("applyColor: failed to apply color to object", err, obj);
-      }
-    };
-    targets.forEach((obj) => applyToObject(obj));
-    canvas.requestRenderAll();
-    saveCanvasToStorage();
-  };
-
-  const autoColorRefs = useRef({});
-  const AUTO_COLORS = ["#DC3545", "#28A745", "#FFC107"];
-
-  const applyColorToSvgName = (svgName, color) => {
-    if (!canvasEditor || !svgName) return;
-    try {
-      const applyToObject = (o) => {
-        try {
-          if (o instanceof fabric.Group && o.getObjects) {
-            o.getObjects().forEach(applyToObject);
-            o.dirty = true;
-          } else {
-            if (typeof o.set === "function" && o.type !== "text") {
-              o.set("fill", color);
-            }
-          }
-        } catch (e) {}
-      };
-
-      canvasEditor.getObjects().forEach((obj) => {
-        if (obj.svgName === svgName) {
-          applyToObject(obj);
-        } else if (obj instanceof fabric.Group && obj.getObjects) {
-          obj.getObjects().forEach((child) => {
-            if (child.svgName === svgName) {
-              applyToObject(child);
-            }
-          });
-        }
-      });
-      canvasEditor.requestRenderAll();
-      saveCanvasToStorage();
-    } catch (err) {
-      console.warn("applyColorToSvgName failed", err);
-    }
-  };
-
-  const startAutoColorCycle = (svgName) => {
-    if (!svgName || !canvasEditor || editMode) return;
-    stopAutoColorCycle(svgName);
-    const entry = autoColorRefs.current[svgName] || {
-      index: 0,
-      intervalId: null,
-    };
-    autoColorRefs.current[svgName] = entry;
-
-    entry.index = (entry.index + 1) % AUTO_COLORS.length;
-    applyColorToSvgName(svgName, AUTO_COLORS[entry.index]);
-
-    entry.intervalId = setInterval(() => {
-      try {
-        entry.index = (entry.index + 1) % AUTO_COLORS.length;
-        applyColorToSvgName(svgName, AUTO_COLORS[entry.index]);
-      } catch (e) {
-        console.warn("auto color tick failed", e);
-      }
-    }, 3000);
-  };
-
-  const stopAutoColorCycle = (svgName) => {
-    const entry = autoColorRefs.current[svgName];
-    if (entry && entry.intervalId) {
-      clearInterval(entry.intervalId);
-      entry.intervalId = null;
-    }
-    delete autoColorRefs.current[svgName];
-  };
-
-  const stopAllAutoColorCycles = () => {
-    try {
-      Object.keys(autoColorRefs.current).forEach((name) => {
-        const e = autoColorRefs.current[name];
-        if (e && e.intervalId) clearInterval(e.intervalId);
-      });
-    } catch (e) {}
-    autoColorRefs.current = {};
-  };
-
-  useEffect(() => {
-    if (editMode) stopAllAutoColorCycles();
-    return () => {};
-  }, [editMode]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.startSvgAutoColor = startAutoColorCycle;
-      window.stopSvgAutoColor = stopAutoColorCycle;
-      window.stopAllSvgAutoColor = stopAllAutoColorCycles;
-    }
-    return () => {
-      if (typeof window !== "undefined") {
-        try {
-          delete window.startSvgAutoColor;
-          delete window.stopSvgAutoColor;
-          delete window.stopAllSvgAutoColor;
-        } catch (e) {}
-      }
-    };
-  }, [canvasEditor, editMode]);
-
-  const saveCanvasState = () => {
-    const canvas = canvasEditor;
-    if (!canvas) return;
-    const json = JSON.stringify(canvas.toJSON(CUSTOM_PROPS), null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `scada-canvas-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const loadCanvasState = (e) => {
-    if (!editMode) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const json = event.target?.result;
-      if (!json) return;
-      canvasEditor.loadFromJSON(
-        JSON.parse(json),
-        () => {
-          canvasEditor.getObjects().forEach((obj) => {
-            if (obj.svgName !== undefined) {
-              if (!obj.stateProperties) {
-                obj.stateProperties = [];
-              }
-              CUSTOM_PROPS.forEach((prop) => {
-                if (!obj.stateProperties.includes(prop)) {
-                  obj.stateProperties.push(prop);
-                }
-              });
-
-              const baseToObject = obj.toObject.bind(obj);
-              obj.toObject = function (props) {
-                const list = Array.isArray(props)
-                  ? props.slice()
-                  : props
-                  ? [props]
-                  : [];
-                CUSTOM_PROPS.forEach((p) => {
-                  if (!list.includes(p)) list.push(p);
-                });
-                return baseToObject(list);
-              };
-            }
-          });
-          canvasEditor.requestRenderAll();
-          setSelectedObjects([]);
-          saveCanvasToStorage();
-        },
-        (o, object) => {
-          if (o.svgName !== undefined) object.svgName = o.svgName;
-          if (o.svgString !== undefined) object.svgString = o.svgString;
-          if (o.svgUpdated !== undefined) object.svgUpdated = o.svgUpdated;
-        }
-      );
-    };
-    reader.readAsText(file);
-    if (loadInputRef.current) loadInputRef.current.value = "";
-    console.log("new file uploaded");
-  };
-
-  const clearCanvas = () => {
-    if (!editMode) return;
-    const canvas = canvasEditor;
-    if (!canvas) return;
-    canvas.clear();
-    localStorage.removeItem(CANVAS);
-    saveCanvasToStorage(canvas);
-  };
-
   useEffect(() => {
     if (!canvasEditor) return;
 
@@ -862,17 +629,82 @@ export default function CanvasEditor() {
     }
   }, [canvasEditor, editMode]);
 
-  if (!isClient)
-    return (
-      <div className="w-screen h-screen flex items-center justify-center">
-        <div
-          className="h-10 w-10 rounded-full border-4 border-gray-200 border-t-blue-500 animate-spin"
-          aria-label="Loading"
-          role="status"
-        />
-      </div>
-    );
+  // ====== JSON SAVE/LOAD ======
+  const saveCanvasState = () => {
+    const canvas = canvasEditor;
+    if (!canvas) return;
+    const json = JSON.stringify(canvas.toJSON(CUSTOM_PROPS), null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `scada-canvas-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
+  const loadCanvasState = (e) => {
+    if (!editMode) return;
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const json = event.target && event.target.result;
+      if (!json || !canvasEditor) return;
+      canvasEditor.loadFromJSON(
+        JSON.parse(json),
+        () => {
+          canvasEditor.getObjects().forEach((obj) => {
+            if (obj.svgName !== undefined) {
+              if (!obj.stateProperties) {
+                obj.stateProperties = [];
+              }
+              CUSTOM_PROPS.forEach((prop) => {
+                if (!obj.stateProperties.includes(prop)) {
+                  obj.stateProperties.push(prop);
+                }
+              });
+
+              const baseToObject = obj.toObject.bind(obj);
+              obj.toObject = function (props) {
+                const list = Array.isArray(props)
+                  ? props.slice()
+                  : props
+                  ? [props]
+                  : [];
+                CUSTOM_PROPS.forEach((p) => {
+                  if (!list.includes(p)) list.push(p);
+                });
+                return baseToObject(list);
+              };
+            }
+          });
+          canvasEditor.requestRenderAll();
+          setSelectedObjects([]);
+          saveCanvasToStorage();
+        },
+        (o, object) => {
+          if (o.svgName !== undefined) object.svgName = o.svgName;
+          if (o.svgString !== undefined) object.svgString = o.svgString;
+          if (o.svgUpdated !== undefined) object.svgUpdated = o.svgUpdated;
+        }
+      );
+    };
+    reader.readAsText(file);
+    if (loadInputRef.current) loadInputRef.current.value = "";
+    console.log("new file uploaded");
+  };
+
+  const clearCanvas = () => {
+    if (!editMode) return;
+    const canvas = canvasEditor;
+    if (!canvas) return;
+    canvas.clear();
+    localStorage.removeItem(CANVAS);
+    saveCanvasToStorage(canvas);
+  };
+
+  // ====== UI ICONS ======
   const EditIcon = () => (
     <svg
       className="w-4 h-4"
@@ -1059,6 +891,39 @@ export default function CanvasEditor() {
     saveCanvasToStorage();
   };
 
+  const applyColor = (color) => {
+    if (!editMode) return;
+    const canvas = canvasEditor;
+    if (!canvas) return;
+    const fillColor = color;
+    const targets = selectedObjects.length > 0 ? selectedObjects : [];
+    const applyToObject = (obj) => {
+      try {
+        if (obj instanceof fabric.Group) {
+          obj.getObjects().forEach((child) => applyToObject(child));
+          obj.dirty = true;
+        } else {
+          if (typeof obj.set === "function") {
+            const supportsFill =
+              "fill" in obj ||
+              obj.type === "path" ||
+              obj.type === "polygon" ||
+              obj.type === "polyline" ||
+              obj.type === "rect" ||
+              obj.type === "circle" ||
+              obj.type === "triangle";
+            if (supportsFill) obj.set("fill", fillColor);
+          }
+        }
+      } catch (err) {
+        console.warn("applyColor: failed to apply color to object", err, obj);
+      }
+    };
+    targets.forEach((obj) => applyToObject(obj));
+    canvas.requestRenderAll();
+    saveCanvasToStorage();
+  };
+
   const handleSvgSelect = async (category, svgFile) => {
     if (!editMode || !canvasEditor) return;
     try {
@@ -1076,6 +941,160 @@ export default function CanvasEditor() {
       alert("Error loading SVG: " + err.message);
     }
   };
+
+  const cancelPending = () => {
+    setPendingSvgText(null);
+    setPendingFileName(null);
+    setDialogName("");
+    setDialogError("");
+    setShowNameDialog(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const processPendingSvg = (name) => {
+    if (!editMode) return;
+    const svgString = pendingSvgText;
+    if (!svgString || !canvasEditor) return;
+
+    const svgStringTrimmed = svgString.replace(/^\uFEFF/, "");
+
+    fabric
+      .loadSVGFromString(svgStringTrimmed)
+      .then((svgData) => {
+        const canvas = canvasEditor;
+        const filteredObjects = svgData.objects;
+
+        if (filteredObjects.length === 0) {
+          console.warn("No objects in SVG");
+          setPendingSvgText(null);
+          setPendingFileName(null);
+          setDialogName("");
+          setDialogError("");
+          setShowNameDialog(false);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+          return;
+        }
+
+        const group = fabric.util.groupSVGElements(
+          filteredObjects,
+          svgData.options
+        );
+        const svgName = name || pendingFileName || `svg-${Date.now()}`;
+
+        const svgStringForStore = svgStringTrimmed;
+
+        group.svgName = svgName;
+        group.svgString = svgStringForStore;
+        group.svgUpdated = Date.now();
+
+        group.set({
+          left: canvas.width / 2,
+          top: canvas.height / 2,
+          originX: "center",
+          originY: "center",
+          scaleX: 0.5,
+          scaleY: 0.5,
+        });
+
+        const originalToObject = group.toObject.bind(group);
+        group.toObject = function (propertiesToInclude) {
+          const props = Array.isArray(propertiesToInclude)
+            ? propertiesToInclude.slice()
+            : propertiesToInclude
+            ? [propertiesToInclude]
+            : [];
+          CUSTOM_PROPS.forEach((p) => {
+            if (!props.includes(p)) props.push(p);
+          });
+          return originalToObject(props);
+        };
+
+        try {
+          const label = new fabric.Text(svgName, {
+            left: (group.width || 0) / 2 + 10,
+            top: 0,
+            originX: "left",
+            originY: "center",
+            fontSize: 14,
+            fill: "#333",
+            selectable: false,
+            evented: false,
+            name: `label-${Date.now()}`,
+          });
+
+          if (group instanceof fabric.Group) {
+            if (typeof group.addWithUpdate === "function") {
+              group.addWithUpdate(label);
+            } else if (Array.isArray(group.getObjects && group.getObjects())) {
+              group.getObjects().push(label);
+            }
+            group.dirty = true;
+          }
+        } catch (err) {
+          console.warn(
+            "processPendingSvg: failed to attach label into group",
+            err
+          );
+        }
+
+        canvas.add(group);
+        canvas.renderAll();
+        saveCanvasToStorage();
+
+        if (fileInputRef.current) fileInputRef.current.value = "";
+
+        setPendingSvgText(null);
+        setPendingFileName(null);
+        setDialogName("");
+        setDialogError("");
+        setShowNameDialog(false);
+      })
+      .catch((err) => {
+        console.error("Error loading SVG:", err);
+        setPendingSvgText(null);
+        setPendingFileName(null);
+        setDialogName("");
+        setDialogError("");
+        setShowNameDialog(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      });
+  };
+
+  const confirmPending = (name) => {
+    const canvas = canvasEditor;
+    const trimmed = (name || "").trim();
+    if (!trimmed) {
+      setDialogError("Name is required");
+      return;
+    }
+    try {
+      const exists = canvas
+        ? canvas.getObjects().some((obj) => {
+            const other = (obj && obj.svgName) || "";
+            return other.trim().toLowerCase() === trimmed.toLowerCase();
+          })
+        : false;
+      if (exists) {
+        setDialogError("This name is already used");
+        return;
+      }
+    } catch (err) {
+      console.warn("confirmPending: error checking existing names", err);
+    }
+    setDialogError("");
+    processPendingSvg(trimmed);
+  };
+
+  if (!isClient)
+    return (
+      <div className="w-screen h-screen flex items-center justify-center">
+        <div
+          className="h-10 w-10 rounded-full border-4 border-gray-200 border-t-blue-500 animate-spin"
+          aria-label="Loading"
+          role="status"
+        />
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -1147,7 +1166,7 @@ export default function CanvasEditor() {
                 });
                 canvas.add(red, blue, green);
                 canvas.requestRenderAll();
-                saveCanvasToStorage();
+                saveCanvasToStorage(canvas);
               }}
               className={`w-full px-4 py-3 bg-secondary text-secondary-foreground rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-start gap-3 shadow-sm hover:shadow-md ${
                 !editMode
